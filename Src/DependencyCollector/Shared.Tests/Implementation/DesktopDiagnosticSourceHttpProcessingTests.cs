@@ -50,11 +50,16 @@ namespace Microsoft.ApplicationInsights.DependencyCollector.Implementation
         public void Cleanup()
         {
             DependencyTableStore.Instance.IsDesktopHttpDiagnosticSourceActivated = false;
+
+            while (Activity.Current != null)
+            {
+                Activity.Current.Stop();
+            }
         }
         #endregion //TestInitiliaze
 
         /// <summary>
-        /// Validates that OnRequestSend and OnResponseReceive sends valid telemetry.
+        /// Validates that OnBegin and OnEnd sends valid telemetry.
         /// </summary>
         [TestMethod]
         public void RddTestHttpDesktopProcessingFrameworkUpdateTelemetryName()
@@ -62,11 +67,11 @@ namespace Microsoft.ApplicationInsights.DependencyCollector.Implementation
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(this.testUrl);
 
             var stopwatch = Stopwatch.StartNew();
-            this.httpDesktopProcessingFramework.OnRequestSend(request);
+            this.httpDesktopProcessingFramework.OnBegin(request);
             Thread.Sleep(this.sleepTimeMsecBetweenBeginAndEnd);
             Assert.AreEqual(0, this.sendItems.Count, "No telemetry item should be processed without calling End");
             var response = TestUtils.GenerateHttpWebResponse(HttpStatusCode.OK);
-            this.httpDesktopProcessingFramework.OnResponseReceive(request, response);
+            this.httpDesktopProcessingFramework.OnEnd(null, request, response);
             stopwatch.Stop();
 
             Assert.AreEqual(1, this.sendItems.Count, "Only one telemetry item should be sent");
@@ -74,9 +79,25 @@ namespace Microsoft.ApplicationInsights.DependencyCollector.Implementation
         }
 
         /// <summary>
+        /// Validates that OnBegin does not inject headers when called with injectCorrelationHeadersFlag = false.
+        /// </summary>
+        [TestMethod]
+        public void RddTestHttpProcessingFrameworkDoNotInjectHeadersWhenFlagIsSet()
+        {
+            var activity = new Activity("parent").AddBaggage("k", "v").Start();
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(this.testUrl);
+            this.httpDesktopProcessingFramework.OnBegin(request, false);
+            Assert.IsNull(request.Headers[RequestResponseHeaders.RequestIdHeader]);
+            Assert.IsNull(request.Headers[RequestResponseHeaders.CorrelationContextHeader]);
+            Assert.IsNotNull(request.Headers[RequestResponseHeaders.StandardRootIdHeader]);
+            Assert.IsNotNull(request.Headers[RequestResponseHeaders.StandardParentIdHeader]);
+            activity.Stop();
+        }
+
+        /// <summary>
         /// Validates that even if multiple events have fired, as long as there is only
         /// one HttpWebRequest, only one event should be written, during the first call
-        /// to OnResponseReceive.
+        /// to OnEnd.
         /// </summary>
         [TestMethod]
         public void RddTestHttpDesktopProcessingFrameworkNoDuplication()
@@ -86,19 +107,20 @@ namespace Microsoft.ApplicationInsights.DependencyCollector.Implementation
             var successResponse = TestUtils.GenerateHttpWebResponse(HttpStatusCode.OK);
 
             Stopwatch stopwatch = Stopwatch.StartNew();
-            this.httpDesktopProcessingFramework.OnRequestSend(request);  
-            this.httpDesktopProcessingFramework.OnRequestSend(request);  
-            this.httpDesktopProcessingFramework.OnRequestSend(request);  
-            this.httpDesktopProcessingFramework.OnRequestSend(request);  
-            this.httpDesktopProcessingFramework.OnRequestSend(request);  
+
+            this.httpDesktopProcessingFramework.OnBegin(request);  
+            this.httpDesktopProcessingFramework.OnBegin(request);  
+            this.httpDesktopProcessingFramework.OnBegin(request);  
+            this.httpDesktopProcessingFramework.OnBegin(request);  
+            this.httpDesktopProcessingFramework.OnBegin(request);  
             Thread.Sleep(this.sleepTimeMsecBetweenBeginAndEnd);
             Assert.AreEqual(0, this.sendItems.Count, "No telemetry item should be processed without calling End");
-            this.httpDesktopProcessingFramework.OnResponseReceive(request, redirectResponse);
+            this.httpDesktopProcessingFramework.OnEnd(null, request, redirectResponse);
             stopwatch.Stop();
             Assert.AreEqual(1, this.sendItems.Count, "Only one telemetry item should be sent");
 
-            this.httpDesktopProcessingFramework.OnResponseReceive(request, redirectResponse);
-            this.httpDesktopProcessingFramework.OnResponseReceive(request, successResponse);
+            this.httpDesktopProcessingFramework.OnEnd(null, request, redirectResponse);
+            this.httpDesktopProcessingFramework.OnEnd(null, request, successResponse);
 
             Assert.AreEqual(1, this.sendItems.Count, "Only one telemetry item should be sent");
             ValidateTelemetryPacketForOnRequestSend(this.sendItems[0] as DependencyTelemetry, this.testUrl, RemoteDependencyConstants.HTTP, true, stopwatch.Elapsed.TotalMilliseconds, "302");
@@ -124,8 +146,8 @@ namespace Microsoft.ApplicationInsights.DependencyCollector.Implementation
 
             var response = TestUtils.GenerateHttpWebResponse(HttpStatusCode.OK, headers);
 
-            this.httpDesktopProcessingFramework.OnRequestSend(request);
-            this.httpDesktopProcessingFramework.OnResponseReceive(request, response);
+            this.httpDesktopProcessingFramework.OnBegin(request);
+            this.httpDesktopProcessingFramework.OnEnd(null, request, response);
             Assert.AreEqual(1, this.sendItems.Count, "Only one telemetry item should be sent");
             Assert.AreEqual(this.testUrl.Host + " | " + this.GetCorrelationIdValue(appId), ((DependencyTelemetry)this.sendItems[0]).Target);
         }
@@ -141,7 +163,7 @@ namespace Microsoft.ApplicationInsights.DependencyCollector.Implementation
 
             Assert.IsNull(request.Headers[RequestResponseHeaders.RequestContextHeader]);
 
-            this.httpDesktopProcessingFramework.OnRequestSend(request);
+            this.httpDesktopProcessingFramework.OnBegin(request);
             Assert.IsNotNull(request.Headers.GetNameValueHeaderValue(RequestResponseHeaders.RequestContextHeader, RequestResponseHeaders.RequestContextCorrelationSourceKey));
         }
 
@@ -158,7 +180,7 @@ namespace Microsoft.ApplicationInsights.DependencyCollector.Implementation
             var client = new TelemetryClient(this.configuration);
             using (var op = client.StartOperation<RequestTelemetry>("request"))
             {
-                this.httpDesktopProcessingFramework.OnRequestSend(request);
+                this.httpDesktopProcessingFramework.OnBegin(request);
 
                 var actualParentIdHeader = request.Headers[RequestResponseHeaders.StandardParentIdHeader];
                 var actualRequestIdHeader = request.Headers[RequestResponseHeaders.RequestIdHeader];
@@ -213,7 +235,7 @@ namespace Microsoft.ApplicationInsights.DependencyCollector.Implementation
                 new List<string>(),
                 RandomAppIdEndpoint);
 
-            localHttpProcessingFramework.OnRequestSend(request);
+            localHttpProcessingFramework.OnBegin(request);
             Assert.IsNull(request.Headers[RequestResponseHeaders.RequestContextHeader]);
             Assert.AreEqual(0, request.Headers.Keys.Cast<string>().Count(x => x.StartsWith("x-ms-", StringComparison.OrdinalIgnoreCase)));
 
@@ -224,7 +246,7 @@ namespace Microsoft.ApplicationInsights.DependencyCollector.Implementation
                 true, 
                 exclusionList,
                 RandomAppIdEndpoint);
-            localHttpProcessingFramework.OnRequestSend(request);
+            localHttpProcessingFramework.OnBegin(request);
             Assert.IsNull(request.Headers[RequestResponseHeaders.RequestContextHeader]);
             Assert.AreEqual(0, request.Headers.Keys.Cast<string>().Count(x => x.StartsWith("x-ms-", StringComparison.OrdinalIgnoreCase)));
         }
@@ -241,7 +263,7 @@ namespace Microsoft.ApplicationInsights.DependencyCollector.Implementation
 
             request.Headers.Add(RequestResponseHeaders.RequestContextHeader, sampleHeaderValueWithAppId);
 
-            this.httpDesktopProcessingFramework.OnRequestSend(request);
+            this.httpDesktopProcessingFramework.OnBegin(request);
             var actualHeaderValue = request.Headers[RequestResponseHeaders.RequestContextHeader];
 
             Assert.IsNotNull(actualHeaderValue);
@@ -252,7 +274,7 @@ namespace Microsoft.ApplicationInsights.DependencyCollector.Implementation
 
             request.Headers.Add(RequestResponseHeaders.RequestContextHeader, sampleHeaderValueWithoutAppId);
 
-            this.httpDesktopProcessingFramework.OnRequestSend(request);
+            this.httpDesktopProcessingFramework.OnBegin(request);
             actualHeaderValue = request.Headers[RequestResponseHeaders.RequestContextHeader];
 
             Assert.IsNotNull(actualHeaderValue);

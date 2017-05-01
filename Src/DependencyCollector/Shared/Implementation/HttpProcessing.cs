@@ -88,12 +88,11 @@ namespace Microsoft.ApplicationInsights.DependencyCollector.Implementation
         /// <summary>
         /// Common helper for all Begin Callbacks.
         /// </summary>
-        /// <param name="thisObj">This object.</param>        
-        /// <param name="skipIfNotNew">Whether to skip updating properties on the DependencyTelemetry object if it
-        /// already exists. If this is false, OnBegin wouldn't update properties on the telemetry object even if
-        /// has existed in the telemetry table.</param>        
+        /// <param name="thisObj">This object.</param>
+        /// <param name="injectCorrelationHeaders">Flag that enables Request-Id and Correlation-Context headers injection.
+        /// Should be set to true only for profiler and old versions of DiagnosticSource Http hook events.</param>
         /// <returns>Null object as all context is maintained in this class via weak tables.</returns>
-        internal object OnBegin(object thisObj, bool skipIfNotNew)
+        internal object OnBegin(object thisObj, bool injectCorrelationHeaders = true)
         {
             try
             {
@@ -143,10 +142,7 @@ namespace Microsoft.ApplicationInsights.DependencyCollector.Implementation
                     {
                         telemetry = telemetryTuple.Item1;
                         DependencyCollectorEventSource.Log.TrackingAnExistingTelemetryItemVerbose();
-                        if (skipIfNotNew)
-                        {
-                            return null;
-                        }
+                        return null;
                     }
                 }
 
@@ -209,28 +205,32 @@ namespace Microsoft.ApplicationInsights.DependencyCollector.Implementation
                             webRequest.Headers.Add(RequestResponseHeaders.StandardParentIdHeader, parentId);
                         }
 
-                        if (webRequest.Headers[RequestResponseHeaders.RequestIdHeader] == null)
+                        // ApplicationInsights only need to inject Request-Id and Correlation-Context headers with profile instrumentation 
+                        if (injectCorrelationHeaders)
                         {
-                            webRequest.Headers.Add(RequestResponseHeaders.RequestIdHeader, telemetry.Id);
-                        }
-
-                        if (webRequest.Headers[RequestResponseHeaders.CorrelationContextHeader] == null)
-                        {
-#if NET45
-                            var currentActivity = Activity.Current;
-                            if (currentActivity != null && currentActivity.Baggage.Any())
+                            if (webRequest.Headers[RequestResponseHeaders.RequestIdHeader] == null)
                             {
-                                webRequest.Headers.SetHeaderFromNameValueCollection(RequestResponseHeaders.CorrelationContextHeader, currentActivity.Baggage);
+                                webRequest.Headers.Add(RequestResponseHeaders.RequestIdHeader, telemetry.Id);
                             }
+
+                            if (webRequest.Headers[RequestResponseHeaders.CorrelationContextHeader] == null)
+                            {
+#if NET45
+                                var currentActivity = Activity.Current;
+                                if (currentActivity != null && currentActivity.Baggage.Any())
+                                {
+                                    webRequest.Headers.SetHeaderFromNameValueCollection(RequestResponseHeaders.CorrelationContextHeader, currentActivity.Baggage);
+                                }
 #else
 #pragma warning disable 618
-                            var correlationContext = CorrelationHelper.GetCorrelationContext();
+                                var correlationContext = CorrelationHelper.GetCorrelationContext();
 #pragma warning restore 618
-                            if (correlationContext != null && correlationContext.Count > 0)
-                            {
-                                webRequest.Headers.SetHeaderFromNameValueCollection(RequestResponseHeaders.CorrelationContextHeader, correlationContext);
-                            }
+                                if (correlationContext != null && correlationContext.Count > 0)
+                                {
+                                    webRequest.Headers.SetHeaderFromNameValueCollection(RequestResponseHeaders.CorrelationContextHeader, correlationContext);
+                                }
 #endif
+                            }
                         }
                     }
                 }
