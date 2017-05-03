@@ -49,7 +49,7 @@
         /// <summary>
         /// Gets or sets a value indicating whether to disable runtime instrumentation.
         /// </summary>
-        public bool EnableDiagnosticSourceInstrumentation { get; set; }
+        public bool DisableDiagnosticSourceInstrumentation { get; set; }
 
         /// <summary>
         /// Gets the component correlation configuration.
@@ -227,7 +227,7 @@
         private void InitializeForDiagnosticAndFrameworkEventSource()
         {
 #if NET45
-            if (this.EnableDiagnosticSourceInstrumentation)
+            if (!this.DisableDiagnosticSourceInstrumentation)
             {
                 DesktopDiagnosticSourceHttpProcessing desktopHttpProcessing = new DesktopDiagnosticSourceHttpProcessing(
                     this.telemetryConfiguration,

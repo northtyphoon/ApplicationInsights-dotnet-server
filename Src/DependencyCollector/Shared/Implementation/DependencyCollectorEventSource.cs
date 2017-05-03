@@ -260,6 +260,15 @@
             this.WriteEvent(23, this.ApplicationName);
         }
 
+        [Event(
+            24,
+            Message = "Telemetry is tracked with HttpDesktopDiagnosticSourceListener.",
+            Level = EventLevel.Verbose)]
+        public void SkipTrackingTelemetryItemWithEventSource(string appDomainName = "Incorrect")
+        {
+            this.WriteEvent(24, this.ApplicationName);
+        }
+
         [NonEvent]
         private string GetApplicationName()
         {
