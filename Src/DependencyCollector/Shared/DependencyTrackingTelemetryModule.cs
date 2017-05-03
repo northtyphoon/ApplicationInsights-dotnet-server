@@ -231,7 +231,7 @@
             {
                 DesktopDiagnosticSourceHttpProcessing desktopHttpProcessing = new DesktopDiagnosticSourceHttpProcessing(
                     this.telemetryConfiguration,
-                    DependencyTableStore.Instance.WebRequestConditionalHolder,
+                    DependencyTableStore.Instance.WebRequestCacheHolder,
                     this.SetComponentCorrelationHttpHeaders,
                     this.ExcludeComponentCorrelationHttpHeadersOnDomains,
                     this.EffectiveProfileQueryEndpoint);

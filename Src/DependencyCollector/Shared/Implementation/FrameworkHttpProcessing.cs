@@ -117,6 +117,11 @@ namespace Microsoft.ApplicationInsights.DependencyCollector.Implementation
                 return;
             }
 
+            if (DependencyTableStore.Instance.IsDesktopHttpDiagnosticSourceActivated && success.HasValue && success.Value)
+            {
+                // DesktopHttpDiagnosticSource 
+            }
+
             if (!telemetryTuple.Item2)
             {
                 this.TelemetryTable.Remove(id);
